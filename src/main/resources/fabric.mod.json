@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "obs_overlay",
+  "version": "3.0.0-alpha.4+26.3",
+  "name": "OBS Overlay",
+  "description": "Hide HUD and GUI elements from OBS by rendering them into an overlay that is composited after the capture hook ran. Ported to Minecraft 26.3 (OpenGL backend only).",
+  "authors": [
+    "zziger"
+  ],
+  "contact": {
+    "homepage": "https://modrinth.com/mod/obs-overlay",
+    "sources": "https://github.com/zziger/obs-overlay",
+    "issues": "https://github.com/zziger/obs-overlay/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/obs_overlay/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "me.zziger.obsoverlay.OBSOverlayFabricClient"
+    ],
+    "modmenu": [
+      "me.zziger.obsoverlay.ModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "obs_overlay.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~26.3-",
+    "java": ">=25",
+    "cloth-config": ">=26.3.159"
+  },
+  "suggests": {
+    "modmenu": "*"
+  },
+  "custom": {
+    "modmenu": {
+      "links": {
+        "Modrinth": "https://modrinth.com/mod/obs-overlay",
+        "CurseForge": "https://www.curseforge.com/minecraft/mc-mods/obs-overlay"
+      }
+    }
+  }
+}

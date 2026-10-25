@@ -1,0 +1,20 @@
+{
+  "required": true,
+  "package": "me.zziger.obsoverlay.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "minVersion": "0.8",
+  "client": [
+    "GameRendererMixin",
+    "GuiMixin",
+    "GuiRendererMixin",
+    "GuiRenderStateMixin",
+    "HudMixin",
+    "ScreenMixin",
+    "VideoSettingsScreenMixin",
+    "ChatScreenMixin",
+    "ChatComponentMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
