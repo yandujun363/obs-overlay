@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Populates libs/ (gitignored) from a local Minecraft 26.3 installation.
 #
-#   tools/fetch-deps.sh "/mnt/d/MC/.minecraft/versions/北立交桥五周目(bate)"
+#   tools/fetch-deps.sh "/path/to/.minecraft/versions/<26.3 version dir>"
 #
 # What it does:
 #   * extracts only the game classes (net/**, com/**) of the 26.3 client jar into libs/client-26.3
@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INSTANCE="${1:-${MC_INSTANCE:-}}"
 if [ -z "$INSTANCE" ] || [ ! -d "$INSTANCE" ]; then
     echo "usage: tools/fetch-deps.sh <path to a 26.3 version folder>" >&2
-    echo "       e.g. \"/mnt/d/MC/.minecraft/versions/北立交桥五周目(bate)\"" >&2
+    echo "       e.g. \"/path/to/.minecraft/versions/<26.3 version dir>\"" >&2
     exit 1
 fi
 LIBRARIES="${MC_LIBRARIES:-$(cd "$INSTANCE/../.." && pwd)/libraries}"

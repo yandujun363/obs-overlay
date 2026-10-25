@@ -122,9 +122,9 @@ Minecraft#renderFrame
 `NativeHook` 用 MinHook 钩 `opengl32!wglSwapBuffers`（OBS 的 game capture 钩的就是它）：
 
 ```
-swap 调用链（我们的钩子装在游戏启动时，OBS 的钩子启动采集时才装 → MinHook 前插 → OBS 先跑）
+swap 调用链（本模组的钩子装在游戏启动时，OBS 的钩子启动采集时才装 → MinHook 前插 → OBS 先跑）
   OBS detour：拷走后缓冲（干净帧）
-  → 我们的 detour：合成叠加层
+  → 本模组的 detour：合成叠加层
   → 真正的 wglSwapBuffers
 ```
 
@@ -152,7 +152,7 @@ isActive() = hook 已安装 && hook 已至少触发一次 && 合成器未标记 
 
 | 东西 | 原因 |
 |---|---|
-| 世界内内容隐藏（告示牌/箱子/地图/名牌/旗帜/信标） | 26.3 世界渲染是 submit 模式，隐藏世界内内容需要"主 pass 跳过 + 拷深度 + 第二遍渲染"，代价远超收益；仓库主人决定砍掉 |
+| 世界内内容隐藏（告示牌/箱子/地图/名牌/旗帜/信标） | 26.3 世界渲染是 submit 模式，隐藏世界内内容需要"主 pass 跳过 + 拷深度 + 第二遍渲染"，代价远超收益，因此不实现 |
 | Architectury / NeoForge | 26.3 生态无 Architectury；测试实例是 Fabric |
 | ImmediatelyFast 兼容 | 26.3 已无立即模式/batching，其 API 类不存在 |
 | `DrawContext.draw()`、`GlStateManager` 相关 mixin | 对应 API 不存在 |

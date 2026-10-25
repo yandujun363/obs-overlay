@@ -1,6 +1,6 @@
 # AGENTS.md — 接手须知（给下一个 agent）
 
-> **这个分支（`26.3`）完全由 LLM 开发**，服务对象是仓库主人**自己的**使用需求。
+> **这个分支（`26.3`）完全由 LLM 开发**，面向维护者自身的使用需求。
 > 目标不是"做一个通用的、可长期维护的 mod"，而是"在 26.3 + Fabric + Windows + OBS 上跑起来"。
 > 改动前先读 §1（边界）和 §8（红线）。
 
@@ -16,8 +16,7 @@
 | `javac` 直编（26.3 无混淆、无 intermediary） | Gradle / Loom（本分支没有，且 26.3 的 loom 用法未验证） |
 | 上游 `1.21.4` 分支是独立存在的历史 | 不要把上游的 Architectury 结构搬回本分支 |
 
-上游仓库：`upstream` remote → `zziger/obs-overlay`（只读参考，别推）。
-本分支的 fork：`origin` → `yandujun363/obs-overlay`。
+`upstream` remote 指向上游作者的同名仓库（只读参考，别推）；`origin` 是当前 fork。
 
 ---
 
@@ -29,8 +28,8 @@
 2. **Windows only**：MinHook(dll) + JNA + `opengl32!wglSwapBuffers`。
 3. **先开游戏，后开 OBS 采集**，且 OBS 必须用**游戏源 / Game Capture（图形钩子）**。
    原理见 §4；顺序反了 OBS 就会拍到叠加层。
-4. 本机测试实例（WSL 路径，Windows 侧是 `D:\MC\.minecraft\versions\北立交桥五周目(bate)`）：
-   `/mnt/d/MC/.minecraft/versions/北立交桥五周目(bate)/`
+4. 你需要一个 26.3 版本目录作为测试/取依赖目标，下面用 `<instance>` 表示它的路径
+   （例如 `.minecraft/versions/<二十六点三版本名>/`）。
 
 ---
 
@@ -38,7 +37,7 @@
 
 ```bash
 # 0) 只做一次：从本机安装取编译期依赖，写入 libs/（已 gitignore）
-tools/fetch-deps.sh "/mnt/d/MC/.minecraft/versions/北立交桥五周目(bate)"
+tools/fetch-deps.sh "<instance>"
 
 # 1) 编译打包 → build/obs_overlay-<version>.jar
 ./build-local.sh
@@ -47,7 +46,8 @@ tools/fetch-deps.sh "/mnt/d/MC/.minecraft/versions/北立交桥五周目(bate)"
 python3 verify-mixins.py
 
 # 3) 部署到测试实例（记得删旧版本 jar）
-cp build/obs_overlay-*.jar "/mnt/d/MC/.minecraft/versions/北立交桥五周目(bate)/mods/"
+rm -f "<instance>/mods/"obs_overlay-*.jar
+cp build/obs_overlay-*.jar "<instance>/mods/"
 ```
 
 要点：
@@ -58,8 +58,8 @@ cp build/obs_overlay-*.jar "/mnt/d/MC/.minecraft/versions/北立交桥五周目(
 - 版本号只有一个来源：`src/main/resources/fabric.mod.json` 的 `version`（`build-local.sh` 会读它）。
 - `libs/` 里的依赖版本是从测试实例的 `<instance>.json` **按版本号 pin** 的（loader/mixin/jna/lwjgl/...），
   所以编译面与运行时一致。换实例后重跑 `fetch-deps.sh`。
-- WSL 里**不能**启动游戏（interop 关闭）；所有"实测"必须让仓库主人在 Windows 侧跑。
-  因此**任何"已修复"的结论都要有对方的日志/现象支撑**，不要凭代码自信断言。
+- 如果开发环境里跑不了游戏（很常见：容器、无 GUI、跨系统编辑），**任何"已修复"的结论都要有
+  真实客户端的日志/现象支撑**，不要凭代码自信断言。
 
 ---
 
@@ -185,7 +185,7 @@ src/main/java/me/zziger/obsoverlay/
 ## 8. 红线（不要做的事）
 
 1. **不要提交** `libs/`、`build/`、解包出来的客户端类、任何 jar 二进制。
-2. **不要提交** 未在 Windows + OBS 上验证过就声称"修好了"的结论（WSL 无法运行游戏）。
+2. **不要**在没有真实客户端（Windows + OBS）验证的情况下声称"修好了"。
 3. **不要**把世界内内容隐藏加回来。
 4. **不要**在没有实测的情况下改变"先游戏后 OBS"的时序假设，也不要把合成挪到 Java 层（必须在原生 swap 钩子里）。
 5. **不要**改动 `GuiRendererMixin` 里重写的 `draw()` 而不对照当前版本的 vanilla 实现
