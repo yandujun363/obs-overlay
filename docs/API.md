@@ -39,7 +39,8 @@ public final class MyModComponents {
 - 组件 id 会被转成语言键：`obs_overlay.component.<namespace>.<path>`，请提供它和 `.tooltip`
 - 自己实现 `IOverlayComponent` 也可以（参考 `DefaultOverlayComponent`），
   但 `isHidden()` 的语义是"完全不画"
-- 组件在设置界面里自动出现（`OBSOverlayConfigScreen` 遍历 `OverlayComponentRegistry.components`）
+- 组件在设置界面里自动出现（`OBSOverlayConfigScreen` 遍历 `OverlayComponentRegistry.components`，
+  显示在「HUD 元素」页；`canAutoHide()` 为真的组件还会出现在该页的自动隐藏子分类里）
 
 ## 3. 注册可隐藏的整屏
 

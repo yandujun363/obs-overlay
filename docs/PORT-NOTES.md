@@ -34,7 +34,7 @@
 | `text.Text` | `network.chat.Component` |
 | `gui.DrawContext` | `gui.GuiGraphicsExtractor`（提取阶段）/ `gui.render.GuiRenderer`（渲染阶段） |
 | `gui.hud.InGameHud` | `gui.Gui` + `gui.Hud` |
-| `gui.hud.ChatHud` / `PlayerListHud` / `DebugHud` / `SubtitlesHud` | `gui.components.ChatComponent` / `PlayerTabOverlay` / `DebugScreenOverlay` / `Hud#extractSubtitleOverlay` |
+| `gui.hud.ChatHud` / `PlayerListHud` / `DebugHud` / `SubtitlesHud` | `gui.components.ChatComponent` / `PlayerTabOverlay` / `DebugScreenOverlay` / `SubtitleOverlay`（`Hud#extractSubtitleOverlay` 只做延迟注册，别挂它） |
 | `gui.screen.Screen` / `...ingame.HandledScreen` | `gui.screens.Screen` / `gui.screens.inventory.AbstractContainerScreen` |
 | `gui.screen.GameMenuScreen` | `gui.screens.PauseScreen` |
 | `gui.screen.option.VideoOptionsScreen` | `gui.screens.options.VideoSettingsScreen`（`OptionsSubScreen#addOptions`，列表 `OptionsList#addBig`） |
@@ -153,10 +153,14 @@ isActive() = hook 已安装 && hook 已至少触发一次 && 合成器未标记 
 | 东西 | 原因 |
 |---|---|
 | 世界内内容隐藏（告示牌/箱子/地图/名牌/旗帜/信标） | 26.3 世界渲染是 submit 模式，隐藏世界内内容需要"主 pass 跳过 + 拷深度 + 第二遍渲染"，代价远超收益，因此不实现 |
+| 名字牌（上游 `name_tag` / `name_tag_sneaking`） | 上游把它归在 HUD，但注入点 `EntityRenderer#renderLabelIfPresent` 在世界渲染阶段；等价还原同样需要上面那条 3D 管线，因此一并归入"世界内内容"。细节见 [`UPSTREAM-DIFF.md`](UPSTREAM-DIFF.md) §5 |
 | Architectury / NeoForge | 26.3 生态无 Architectury；测试实例是 Fabric |
 | ImmediatelyFast 兼容 | 26.3 已无立即模式/batching，其 API 类不存在 |
 | `DrawContext.draw()`、`GlStateManager` 相关 mixin | 对应 API 不存在 |
 | Gradle / Loom | 未验证 26.3 的 loom 用法；javac 直编已满足需求 |
+
+**UI 侧对照结论**：上游 17 个组件里，10 个纯 2D 的 HUD 组件 + 整屏隐藏已全部还原
+（逐项对照与注入点映射见 [`UPSTREAM-DIFF.md`](UPSTREAM-DIFF.md)），缺的 7 个都在上表的前两行。
 
 ---
 
@@ -176,12 +180,14 @@ javap -p -s -classpath libs/client-26.3 net.minecraft.client.gui.render.GuiRende
 ## 6. 升级到 26.x 其它版本时的检查清单
 
 1. `javap` 确认这些**注入点**还在（`verify-mixins.py` 会做，但要看语义是否变化）：
-   `Gui#extractRenderState`、`Hud#extract*`、`ChatScreen#extractRenderState`、
+   `Gui#extractRenderState`、`Hud#extract*`、`SubtitleOverlay#extractRenderState`、`ChatScreen#extractRenderState`、
    `ChatComponent#extractRenderState`、`Screen#extractRenderStateWithTooltipAndSubtitles`、
    `Screen#extractBlurredBackground`、`GuiRenderState#add*`、
    `GuiRenderer#{prepare,addElementToMesh,prepareText,prepareItemElements,preparePictureInPicture,draw,executeDrawRange}`、
    `GameRenderer#render`、`VideoSettingsScreen#addOptions`
 2. 对照 `GuiRenderer#draw` 的新实现同步 `GuiRendererMixin#obs$draw`（prologue 三处最容易漏）
+   顺便确认 `Hud` 的 `deferredSubtitles` 这类"延迟绘制"机制没变——变了就要重新找真正的绘制入口
+   （见 `UPSTREAM-DIFF.md` §3 的注解）
 3. 确认 `GuiRenderer#executeDrawRange` 的签名/语义没变（这是整个方案的地基）
 4. 确认 `GlTexture#glId()` 还在、`TextureTarget` 构造参数没变
 5. 确认 `renderpearl` 仍是 GL 3.3 core（改变 GL 版本会影响 `GlCompositor` 的 shader）

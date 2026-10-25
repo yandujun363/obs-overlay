@@ -102,7 +102,7 @@ src/main/java/me/zziger/obsoverlay/
 ├── OBSOverlay.java                  入口、懒加载渲染器、Vulkan 警告
 ├── OBSOverlayFabricClient.java      ClientModInitializer
 ├── OBSOverlayConfig.java            JSON 配置 + isScreenOverlayed + 保存时清理陈旧键
-├── OBSOverlayConfigScreen.java      cloth-config 设置界面
+├── OBSOverlayConfigScreen.java      cloth-config 设置界面（三页：HUD / 整屏 / 高级）
 ├── ModMenuIntegration.java          ModMenu entrypoint
 ├── OverlayComponentStack.java       标记栈 + 元素→组件 的 IdentityHashMap（每帧 reset）
 ├── OverlayRenderer.java             每帧 beginExtraction/beginFrame、active 判定、诊断 toast
@@ -114,7 +114,8 @@ src/main/java/me/zziger/obsoverlay/
 │   └── type/                        DefaultOverlayComponent / HUDOverlayComponent
 ├── mixin/
 │   ├── GuiMixin.java                Gui#extractRenderState HEAD → 重置标记
-│   ├── HudMixin.java                9 组 Hud#extractXxx 的压/弹标记 + 测试图标
+│   ├── HudMixin.java                8 组 Hud#extractXxx 的压/弹标记 + 测试图标
+│   ├── SubtitleOverlayMixin.java    字幕（挂真正绘制入口；Hud 那边是延迟绘制，挂不上）
 │   ├── ChatScreenMixin.java         整个聊天界面 = chat_bar
 │   ├── ChatComponentMixin.java      聊天消息重新打 chat（HUD 与聊天界面两条路径都覆盖）
 │   ├── ScreenMixin.java             整屏隐藏 + 被隐藏界面取消背景模糊
@@ -130,6 +131,15 @@ src/main/java/me/zziger/obsoverlay/
 
 资源：`fabric.mod.json`、`obs_overlay.mixins.json`（`compatibilityLevel: JAVA_25`, `defaultRequire: 1`）、
 `assets/obs_overlay/{icon.png,lang/*}`（7 语言，键集必须一致）、`lib/MinHook.{x64,x86}.dll`。
+
+文档（改行为/加开关时同步，别让它们和代码打架）：
+
+- `README.md` —— 面向使用者：功能表、安装前提、设置入口
+- `docs/CONFIG.md` —— **配置手册**：三层开关（组件叠加 / auto-hide / 整屏）的语义、每个组件何时出现、
+  可抄的 JSON 配方、排障流程
+- `docs/UPSTREAM-DIFF.md` —— 上游 1.21.4 逐项对照（17 个组件里哪些还原了、注入点映射、为什么没名字牌）
+- `docs/PORT-NOTES.md` —— 26.3 渲染架构与移植原理
+- `docs/API.md` —— 第三方 API
 
 ---
 
@@ -153,6 +163,26 @@ src/main/java/me/zziger/obsoverlay/
 
 `OBSOverlayConfig` 加字段（Gson 默认值即可）→ 在 `OBSOverlayConfigScreen` 加 entry（cloth-config，
 别忘 `setSaveConsumer`）→ 需要时在 `save()` 里做清理/迁移。
+
+设置界面现在是**三页**，新开关放哪页按语义决定：
+
+| 页 | 类别键 | 放什么 |
+|---|---|---|
+| HUD 元素 | `obs_overlay.config.category.hud` | 逐组件的叠加/自动隐藏 |
+| 整屏界面 | `obs_overlay.config.category.screens` | 与 Screen 相关的开关 |
+| 高级 / 诊断 | `obs_overlay.config.category.advanced` | 诊断、合成微调、只影响"怎么画"而不是"画什么"的开关 |
+
+同时更新 `docs/CONFIG.md`（配置手册是面向用户的标准答案，别让文档和代码打架）；新增语言键时
+7 个语言文件都要有（键集必须一致，可用 §3 的构建 + 下面这段检查）。
+
+```bash
+python3 - <<'EOF'
+import json,glob
+s={f:set(json.load(open(f))) for f in glob.glob('src/main/resources/assets/obs_overlay/lang/*.json')}
+base=s['src/main/resources/assets/obs_overlay/lang/en_us.json']
+print(all(v==base for v in s.values()), sorted(base-set().union(*s.values())))
+EOF
+```
 
 ### 6.4 改合成 / 颜色不对
 
@@ -179,6 +209,9 @@ src/main/java/me/zziger/obsoverlay/
 | 界面上看不到某些 HUD，或 OBS 里漏了某块 | 大量元素被合进同一个 draw。检查断批逻辑是否被 upsteam 的排序改动影响 |
 | 启动直接崩在 mixin | 注入点描述符变了。跑 `verify-mixins.py` |
 | 视频设置界面按钮不见了 | 上游改动了 `VideoSettingsScreen`/`OptionsSubScreen#addOptions`/`OptionsList#addBig`，同步 `VideoSettingsScreenMixin` |
+| 改了 `config/obs_overlay.json` 没反应 | 手改要重启游戏（配置只在客户端初始化时读一次）；设置界面里的开关才是即时的 |
+| 设置界面出现 `obs_overlay.config.xxx` 这种裸键名 | 语言文件缺键；7 个语言键集必须一致（见 §6.3 的检查脚本） |
+| 某个组件"开了但没效果" | 先确认标记挂的是**真正绘制**的方法，不是"延迟/转发"的方法。典型：26.3 的 `Hud#extractSubtitleOverlay` 只存 Runnable（`deferredSubtitles`），真正绘制在 `Gui#extractRenderState` → `Hud#extractDeferredSubtitles` → `SubtitleOverlay#extractRenderState`，所以字幕要挂 `SubtitleOverlayMixin`。用 `javap -c` 看方法体里有没有 `putfield ...Runnable` / 只调 `setXxx` 不调 `add*` |
 
 ---
 
@@ -199,6 +232,7 @@ src/main/java/me/zziger/obsoverlay/
 
 - 组件：F3、计分板、Tab、聊天、聊天输入（含 `/` 补全）、标题/动作栏、药水效果、主 HUD、字幕
 - 界面隐藏：生存/创造物品栏、暂停菜单、命令方块、自定义容器 id、隐藏所有屏幕
+- 配置界面：三页都能打开/保存/重置；`hideAllScreens` 打开时单项开关变灰；改完立刻生效（不用重启）
 - 边界：全屏切换、GUI 缩放变化、F1 隐藏 HUD、退出世界回主菜单、Iris + Sodium 组合、立即重开界面
 - 判定标准永远是一句话：**屏幕上有、OBS 里没有**
 - 日志必须出现：`native present hook installed` → `present hook fired` → `GL compositor ready`
@@ -211,3 +245,10 @@ src/main/java/me/zziger/obsoverlay/
 2. `docs/API.md` 里承诺的第三方 API 还没有真实使用者验证
 3. Iris 的 shader 管线对 3D 部分的影响（本分支已无 3D，可忽略）
 4. 若上游 1.21.4 分支新增了 HUD 组件，可按 §6.1 同步过来
+5. **名字牌（`name_tag` / `name_tag_sneaking`）**：上游的 HUD 分类里有这一项，但它画在世界 3D 阶段，
+   要"屏幕上有、OBS 里没有"必须走"世界内容单独一遍渲染 + 拷深度"的管线（见 `docs/UPSTREAM-DIFF.md` §5）。
+   在那条管线打通之前不要做；**更不要**用"取消 `submitNameTag`"糊过去——那会让名字牌在屏幕上一起消失，
+   语义和上游不同，等于偷偷改了功能。
+6. 测试图标目前画在 `Hud#extractRenderState` 末尾（开界面时在界面下面）。若想让它在界面之上也可见，
+   改到 `Gui#extractRenderState` 的末尾（需要 `@Local` 取 `GuiGraphicsExtractor`，`verify-mixins.py` 不校验 sugar，
+   改完必须在真实客户端确认）。
