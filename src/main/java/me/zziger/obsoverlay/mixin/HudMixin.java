@@ -130,13 +130,8 @@ public abstract class HudMixin {
     }
 
     // ---- subtitles (accessibility) ----
-    @Inject(method = "extractSubtitleOverlay(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Z)V", at = @At("HEAD"))
-    private void obs$subtitlesStart(GuiGraphicsExtractor graphics, boolean bl, CallbackInfo ci) {
-        OverlayComponentStack.push(AllDefaultOverlayComponents.subtitles);
-    }
-
-    @Inject(method = "extractSubtitleOverlay(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Z)V", at = @At("RETURN"))
-    private void obs$subtitlesEnd(GuiGraphicsExtractor graphics, boolean bl, CallbackInfo ci) {
-        OverlayComponentStack.pop();
-    }
+    // Not tagged here: in 26.3 the HUD always extracts subtitles in "deferred" mode, so this method
+    // only stores a Runnable and draws nothing (the drawing happens from
+    // Gui#extractRenderState -> Hud#extractDeferredSubtitles, after this tag was popped).
+    // See SubtitleOverlayMixin, which tags the real drawing entry instead.
 }

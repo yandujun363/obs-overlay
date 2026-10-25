@@ -12,7 +12,8 @@
     "ScreenMixin",
     "VideoSettingsScreenMixin",
     "ChatScreenMixin",
-    "ChatComponentMixin"
+    "ChatComponentMixin",
+    "SubtitleOverlayMixin"
   ],
   "injectors": {
     "defaultRequire": 1
