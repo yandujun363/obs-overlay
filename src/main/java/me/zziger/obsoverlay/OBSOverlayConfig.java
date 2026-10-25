@@ -23,8 +23,18 @@ import java.util.HashSet;
 import java.util.Objects;
 
 /**
- * Plain JSON config. The cloth-config based settings screen of the 2.x versions is not ported yet,
- * so for now the file is edited by hand (or by a future screen).
+ * Plain JSON config ({@code config/obs_overlay.json}), read once during client initialisation.
+ *
+ * <p>Three independent groups of switches, one per tab of {@link OBSOverlayConfigScreen}:</p>
+ * <ul>
+ *     <li>{@link #overlayComponents} - draw the component on screen but keep it out of the capture.</li>
+ *     <li>{@link #autoHideComponents} - do not draw it at all while any screen is open.</li>
+ *     <li>{@link #hideAllScreens} / {@link #overlayScreensList} / {@link #overlayHandledScreensList}
+ *     - the same, for whole screens.</li>
+ * </ul>
+ *
+ * <p>Counter-intuitive naming, kept from upstream: {@code true} means "hidden from OBS" (the mod is
+ * called OBS Overlay, so "overlay enabled" = "rendered as an overlay").</p>
  */
 public final class OBSOverlayConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

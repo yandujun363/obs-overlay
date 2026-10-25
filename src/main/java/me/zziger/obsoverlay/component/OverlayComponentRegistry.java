@@ -7,7 +7,7 @@ import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 public final class OverlayComponentRegistry {
@@ -15,7 +15,14 @@ public final class OverlayComponentRegistry {
     /** Screens that do not trigger auto-hide (the HUD stays visible behind them). */
     public static final ArrayList<Class<?>> ignoredScreens = new ArrayList<>(List.of(ChatScreen.class));
 
-    public static final HashMap<String, Class<?>> hideableScreens = new HashMap<>();
+    /**
+     * Screens that can be hidden from the capture as a whole.
+     *
+     * <p>Insertion ordered on purpose: the settings screen iterates this map, and a stable order
+     * (survival inventory, creative inventory, pause menu, command block) is easier to scan than
+     * the arbitrary order of a {@link java.util.HashMap}.</p>
+     */
+    public static final LinkedHashMap<String, Class<?>> hideableScreens = new LinkedHashMap<>();
 
     static {
         hideableScreens.put("inventory", InventoryScreen.class);

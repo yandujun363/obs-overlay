@@ -22,10 +22,25 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Cloth Config based settings screen, ported from the 1.21.x version.
+ * Cloth Config based settings screen.
  *
  * <p>Reachable from {@code Options > Video Settings > OBS Overlay settings} (see
- * {@code VideoSettingsScreenMixin}); ModMenu integration is not ported yet.</p>
+ * {@link me.zziger.obsoverlay.mixin.VideoSettingsScreenMixin}) and from ModMenu
+ * ({@link ModMenuIntegration}).</p>
+ *
+ * <p>The screen is split into three tabs so the three independent switches of the mod do not get
+ * mixed up:</p>
+ * <ol>
+ *     <li><b>HUD elements</b> - per-component "draw it on my screen, keep it out of the capture",
+ *     plus the auto-hide sub-list ("do not draw it at all while a screen is open").</li>
+ *     <li><b>Screens &amp; menus</b> - whole screens (inventory, pause menu, command block, any
+ *     container by menu id) hidden the same way.</li>
+ *     <li><b>Advanced &amp; diagnostics</b> - test icon, premultiplied alpha, config file path.</li>
+ * </ol>
+ *
+ * <p>Toggles apply immediately (the component objects hold the values the renderer reads); the JSON
+ * file is written when the screen is saved. Editing the file by hand requires a restart, because the
+ * config is read once during client initialisation.</p>
  */
 public final class OBSOverlayConfigScreen {
     private OBSOverlayConfigScreen() {
@@ -36,66 +51,127 @@ public final class OBSOverlayConfigScreen {
 
         ConfigBuilder builder = ConfigBuilder.create()
                 .setParentScreen(parent)
-                .setTitle(Component.translatable("obs_overlay.config.title"));
+                .setTitle(Component.translatable("obs_overlay.config.title"))
+                .setDoesConfirmSave(false)
+                .setShouldListSmoothScroll(false)
+                .setShouldTabsSmoothScroll(false);
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
-        ConfigCategory general = builder.getOrCreateCategory(Component.empty());
 
-        general.addEntry(entryBuilder
-                .startBooleanToggle(Component.translatable("obs_overlay.config.show_test_icon"), config.showTestIcon)
-                .setTooltip(Component.translatable("obs_overlay.config.show_test_icon.tooltip"))
-                .setDefaultValue(false)
-                .setSaveConsumer(value -> config.showTestIcon = value)
+        addHudTab(builder, entryBuilder);
+        addScreensTab(builder, entryBuilder, config);
+        addAdvancedTab(builder, entryBuilder, config);
+
+        builder.setSavingRunnable(config::save);
+        return builder.build();
+    }
+
+    /** Tab 1: HUD components + the "hide while any interface is open" sub-list. */
+    private static void addHudTab(ConfigBuilder builder, ConfigEntryBuilder entryBuilder) {
+        ConfigCategory category = builder.getOrCreateCategory(
+                Component.translatable("obs_overlay.config.category.hud"));
+        category.addEntry(entryBuilder
+                .startTextDescription(Component.translatable("obs_overlay.config.hud.intro"))
                 .build());
 
-        general.addEntry(entryBuilder
-                .startBooleanToggle(Component.translatable("obs_overlay.config.premultiplied_alpha"), config.premultipliedAlpha)
-                .setTooltip(Component.translatable("obs_overlay.config.premultiplied_alpha.tooltip"))
-                .setDefaultValue(true)
-                .setSaveConsumer(value -> config.premultipliedAlpha = value)
-                .build());
-
-        // ---- components to overlay ----
         Map<String, BooleanListEntry> overlayEntries = new HashMap<>();
-        SubCategoryBuilder componentsToOverlay = entryBuilder
+        SubCategoryBuilder overlaySub = entryBuilder
                 .startSubCategory(Component.translatable("obs_overlay.config.components_to_overlay"))
                 .setExpanded(true)
                 .setTooltip(Component.translatable("obs_overlay.config.components_to_overlay.tooltip"));
 
         for (IOverlayComponent component : OverlayComponentRegistry.components) {
+            Component name = Component.translatable("obs_overlay.component." + component.getId());
             BooleanListEntry entry = entryBuilder
-                    .startBooleanToggle(Component.translatable("obs_overlay.component." + component.getId()),
-                            component.isOverlayEnabled())
-                    .setTooltip(Component.translatable("obs_overlay.component." + component.getId() + ".tooltip"))
+                    .startBooleanToggle(name, component.isOverlayEnabled())
+                    .setTooltip(
+                            Component.translatable("obs_overlay.component." + component.getId() + ".tooltip"),
+                            Component.translatable("obs_overlay.config.overlay_hint"),
+                            defaultLabel(component.isOverlayEnabledDefault()))
                     .setDefaultValue(component.isOverlayEnabledDefault())
                     .setSaveConsumer(component::setOverlayEnabled)
                     .build();
             overlayEntries.put(component.getId(), entry);
-            componentsToOverlay.add(entry);
+            overlaySub.add(entry);
         }
-        general.addEntry(componentsToOverlay.build());
+        category.addEntry(overlaySub.build());
 
-        // ---- screens to overlay ----
-        SubCategoryBuilder screensToOverlay = entryBuilder
-                .startSubCategory(Component.translatable("obs_overlay.config.screens_to_overlay"))
-                .setTooltip(Component.translatable("obs_overlay.config.screens_to_overlay.tooltip"));
+        SubCategoryBuilder autoHideSub = entryBuilder
+                .startSubCategory(Component.translatable("obs_overlay.config.auto_hide_components"))
+                .setExpanded(false)
+                .setTooltip(Component.translatable("obs_overlay.config.auto_hide_components.tooltip"));
+
+        for (IOverlayComponent component : OverlayComponentRegistry.components) {
+            if (!component.canAutoHide()) {
+                continue;
+            }
+            BooleanListEntry overlayEntry = overlayEntries.get(component.getId());
+            if (overlayEntry == null) {
+                continue;
+            }
+            autoHideSub.add(entryBuilder
+                    .startBooleanToggle(Component.translatable("obs_overlay.component." + component.getId()),
+                            component.isAutoHideEnabled())
+                    .setDefaultValue(true)
+                    .setRequirement(Requirement.isTrue(overlayEntry))
+                    .setTooltipSupplier(() -> {
+                        Component mainTooltip = Component.translatable(
+                                "obs_overlay.component." + component.getId() + ".tooltip");
+                        Component autoHideHint = Component.translatable("obs_overlay.config.auto_hide_hint");
+                        if (overlayEntry.getValue()) {
+                            return Optional.of(new Component[]{mainTooltip, autoHideHint});
+                        }
+                        Component optionName = Component.translatable("obs_overlay.component." + component.getId());
+                        return Optional.of(new Component[]{
+                                mainTooltip,
+                                autoHideHint,
+                                Component.translatable("obs_overlay.config.requires_overlay_enabled", optionName)
+                                        .withStyle(ChatFormatting.RED)
+                        });
+                    })
+                    .setSaveConsumer(component::setAutoHideEnabled)
+                    .build());
+        }
+        category.addEntry(autoHideSub.build());
+    }
+
+    /** Tab 2: whole screens (inventory / pause menu / command block + custom container menu ids). */
+    private static void addScreensTab(ConfigBuilder builder, ConfigEntryBuilder entryBuilder,
+                                      OBSOverlayConfig config) {
+        ConfigCategory category = builder.getOrCreateCategory(
+                Component.translatable("obs_overlay.config.category.screens"));
+        category.addEntry(entryBuilder
+                .startTextDescription(Component.translatable("obs_overlay.config.screens.intro"))
+                .build());
 
         BooleanListEntry hideAllScreens = entryBuilder
-                .startBooleanToggle(Component.translatable("obs_overlay.config.hide_all_screens"), config.hideAllScreens)
+                .startBooleanToggle(Component.translatable("obs_overlay.config.hide_all_screens"),
+                        config.hideAllScreens)
+                .setTooltip(
+                        Component.translatable("obs_overlay.config.hide_all_screens.tooltip"),
+                        Component.translatable("obs_overlay.config.screen_hint"))
                 .setDefaultValue(false)
                 .setSaveConsumer(state -> config.hideAllScreens = state)
                 .build();
-        screensToOverlay.add(hideAllScreens);
+        category.addEntry(hideAllScreens);
 
-        OverlayComponentRegistry.hideableScreens.forEach((screenId, screenClass) -> {
-            BooleanListEntry entry = entryBuilder
-                    .startBooleanToggle(Component.translatable("obs_overlay.screen." + screenId),
-                            config.overlayScreensList.getOrDefault(screenId, false))
-                    .setDefaultValue(false)
-                    .setDisplayRequirement(Requirement.isFalse(hideAllScreens))
-                    .setSaveConsumer(state -> config.overlayScreensList.put(screenId, state))
-                    .build();
-            screensToOverlay.add(entry);
-        });
+        SubCategoryBuilder knownScreens = entryBuilder
+                .startSubCategory(Component.translatable("obs_overlay.config.screens_to_overlay"))
+                .setExpanded(true)
+                .setTooltip(Component.translatable("obs_overlay.config.screens_to_overlay.tooltip"));
+        OverlayComponentRegistry.hideableScreens.forEach((screenId, screenClass) -> knownScreens.add(entryBuilder
+                .startBooleanToggle(Component.translatable("obs_overlay.screen." + screenId),
+                        config.overlayScreensList.getOrDefault(screenId, false))
+                .setTooltip(Component.translatable("obs_overlay.config.screen_hint"))
+                .setDefaultValue(false)
+                .setDisplayRequirement(Requirement.isFalse(hideAllScreens))
+                .setSaveConsumer(state -> config.overlayScreensList.put(screenId, state))
+                .build()));
+        category.addEntry(knownScreens.build());
+
+        SubCategoryBuilder customScreens = entryBuilder
+                .startSubCategory(Component.translatable("obs_overlay.config.custom_screens"))
+                .setExpanded(false)
+                .setTooltip(Component.translatable("obs_overlay.config.custom_handled_screens.tooltip"));
 
         BooleanListEntry customHandledScreens = entryBuilder
                 .startBooleanToggle(Component.translatable("obs_overlay.config.enable_custom_handled_screens"),
@@ -105,9 +181,9 @@ public final class OBSOverlayConfigScreen {
                 .setDisplayRequirement(Requirement.isFalse(hideAllScreens))
                 .setSaveConsumer(state -> config.overlayHandledScreensEnabled = state)
                 .build();
-        screensToOverlay.add(customHandledScreens);
+        customScreens.add(customHandledScreens);
 
-        screensToOverlay.add(entryBuilder
+        customScreens.add(entryBuilder
                 .startStrList(Component.translatable("obs_overlay.config.custom_handled_screens"),
                         new ArrayList<>(config.overlayHandledScreensList))
                 .setTooltip(Component.translatable("obs_overlay.config.custom_handled_screens.tooltip"))
@@ -122,10 +198,12 @@ public final class OBSOverlayConfigScreen {
                         try {
                             Identifier identifier = Identifier.parse(id.trim());
                             if (!BuiltInRegistries.MENU.containsKey(identifier)) {
-                                return Optional.of(Component.translatable("obs_overlay.config.screen_doesnt_exist", id));
+                                return Optional.of(Component.translatable(
+                                        "obs_overlay.config.screen_doesnt_exist", id));
                             }
                         } catch (Exception exception) {
-                            return Optional.of(Component.translatable("obs_overlay.config.screen_doesnt_exist", id));
+                            return Optional.of(Component.translatable(
+                                    "obs_overlay.config.screen_doesnt_exist", id));
                         }
                     }
                     return Optional.empty();
@@ -135,7 +213,7 @@ public final class OBSOverlayConfigScreen {
         // A copy: cloth-config hands this list to an editable widget.
         List<String> existingScreens = new ArrayList<>(
                 BuiltInRegistries.MENU.keySet().stream().map(Identifier::toString).toList());
-        screensToOverlay.add(entryBuilder
+        customScreens.add(entryBuilder
                 .startStrList(Component.translatable("obs_overlay.config.existing_handled_screens"), existingScreens)
                 .setTooltip(Component.translatable("obs_overlay.config.existing_handled_screens.tooltip"))
                 .setDisplayRequirement(Requirement.all(Requirement.isFalse(hideAllScreens),
@@ -144,50 +222,43 @@ public final class OBSOverlayConfigScreen {
                 .setDeleteButtonEnabled(false)
                 .build());
 
-        general.addEntry(screensToOverlay.build());
+        category.addEntry(customScreens.build());
+    }
 
-        // ---- auto hide ----
-        SubCategoryBuilder autoHideComponents = entryBuilder
-                .startSubCategory(Component.translatable("obs_overlay.config.auto_hide_components"))
-                .setExpanded(false)
-                .setTooltip(Component.translatable("obs_overlay.config.auto_hide_components.tooltip"));
+    /** Tab 3: diagnostics and the two knobs that are not about what to hide. */
+    private static void addAdvancedTab(ConfigBuilder builder, ConfigEntryBuilder entryBuilder,
+                                       OBSOverlayConfig config) {
+        ConfigCategory category = builder.getOrCreateCategory(
+                Component.translatable("obs_overlay.config.category.advanced"));
+        category.addEntry(entryBuilder
+                .startTextDescription(Component.translatable("obs_overlay.config.advanced.intro"))
+                .build());
 
-        for (IOverlayComponent component : OverlayComponentRegistry.components) {
-            if (!component.canAutoHide()) {
-                continue;
-            }
-            BooleanListEntry overlayEntry = overlayEntries.get(component.getId());
-            if (overlayEntry == null) {
-                continue;
-            }
-            autoHideComponents.add(entryBuilder
-                    .startBooleanToggle(Component.translatable("obs_overlay.component." + component.getId()),
-                            component.isAutoHideEnabled())
-                    .setDefaultValue(true)
-                    .setRequirement(Requirement.isTrue(overlayEntry))
-                    .setTooltipSupplier(() -> {
-                        Component mainTooltip = Component.translatable(
-                                "obs_overlay.component." + component.getId() + ".tooltip");
-                        if (overlayEntry.getValue()) {
-                            return Optional.of(new Component[]{mainTooltip});
-                        }
-                        Component optionName = Component.translatable("obs_overlay.component." + component.getId());
-                        return Optional.of(new Component[]{
-                                mainTooltip,
-                                Component.translatable("obs_overlay.config.requires_overlay_enabled", optionName)
-                                        .withStyle(ChatFormatting.RED)
-                        });
-                    })
-                    .setSaveConsumer(component::setAutoHideEnabled)
-                    .build());
-        }
-        general.addEntry(autoHideComponents.build());
+        category.addEntry(entryBuilder
+                .startBooleanToggle(Component.translatable("obs_overlay.config.show_test_icon"),
+                        config.showTestIcon)
+                .setTooltip(Component.translatable("obs_overlay.config.show_test_icon.tooltip"))
+                .setDefaultValue(false)
+                .setSaveConsumer(value -> config.showTestIcon = value)
+                .build());
 
-        builder.setDoesConfirmSave(false);
-        builder.setShouldListSmoothScroll(false);
-        builder.setShouldTabsSmoothScroll(false);
-        builder.setSavingRunnable(config::save);
+        category.addEntry(entryBuilder
+                .startBooleanToggle(Component.translatable("obs_overlay.config.premultiplied_alpha"),
+                        config.premultipliedAlpha)
+                .setTooltip(Component.translatable("obs_overlay.config.premultiplied_alpha.tooltip"))
+                .setDefaultValue(true)
+                .setSaveConsumer(value -> config.premultipliedAlpha = value)
+                .build());
 
-        return builder.build();
+        category.addEntry(entryBuilder
+                .startTextDescription(Component.translatable("obs_overlay.config.config_file",
+                        OBSOverlayConfig.getPath().toAbsolutePath().toString()))
+                .build());
+    }
+
+    private static Component defaultLabel(boolean value) {
+        return Component.translatable(value
+                ? "obs_overlay.config.default_on"
+                : "obs_overlay.config.default_off");
     }
 }
